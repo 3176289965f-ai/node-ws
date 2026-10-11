@@ -75,9 +75,51 @@ function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ===== 液态玻璃主题 (借鉴 ybouane/liquidglass) =====
+// 背景: 浅紫渐变 + 彩色柔光斑点(供玻璃折射); 卡片: WebGL 液态玻璃,
+// CDN/ WebGL 不可用时自动降级为 CSS 磨砂玻璃。
+const LG_BG_HTML = `<div class="bg"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div><div class="blob b5"></div></div>`;
+const LG_CSS = `
+  #root { position: relative; z-index: 1; }
+  .bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+    background: linear-gradient(135deg, #f5f1ff 0%, #ebe5fb 45%, #f8edff 100%); }
+  .blob { position: absolute; border-radius: 50%; filter: blur(70px); }
+  .b1 { width: 440px; height: 440px; left: -140px; top: -100px; background: #ffd9f4; opacity: .8; }
+  .b2 { width: 380px; height: 380px; right: -110px; top: 18%; background: #cfdfff; opacity: .8; }
+  .b3 { width: 480px; height: 480px; left: 8%; bottom: -180px; background: #d8c8ff; opacity: .75; }
+  .b4 { width: 300px; height: 300px; right: 6%; bottom: 6%; background: #ffe4cf; opacity: .7; }
+  .b5 { width: 260px; height: 260px; left: 32%; top: 42%; background: #d3f5e8; opacity: .55; }
+  .glass {
+    position: relative; border-radius: 22px;
+    background: rgba(255,255,255,.5);
+    -webkit-backdrop-filter: blur(16px) saturate(1.5);
+    backdrop-filter: blur(16px) saturate(1.5);
+    border: 1px solid rgba(255,255,255,.65);
+    box-shadow: 0 8px 32px rgba(120,100,200,.14);
+  }
+  body.lg-ready .glass {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border: none;
+    box-shadow: none;
+  }`;
+const LG_SCRIPT = `<script type="module">
+(async function () {
+  try {
+    const { LiquidGlass } = await import('https://cdn.jsdelivr.net/npm/@ybouane/liquidglass/dist/index.js');
+    const els = Array.from(document.querySelectorAll('.glass'));
+    const cfg = { cornerRadius: 22, blurAmount: 0.16, refraction: 0.62, chromAberration: 0.04, edgeHighlight: 0.08, shadowOpacity: 0.22, shadowSpread: 12, specular: 0.15 };
+    els.forEach(function (el) { el.dataset.config = JSON.stringify(cfg); });
+    await LiquidGlass.init({ root: document.getElementById('root'), glassElements: els });
+    document.body.classList.add('lg-ready');
+  } catch (e) { /* 保持 CSS 磨砂玻璃降级样式 */ }
+})();
+<\/script>`;
+
 function renderSubPage(o) {
   const card = (proto, link, i) => `
-    <div class="card">
+    <div class="glass card">
       <div class="card-title"><span class="badge">${proto}</span>
         <button onclick="copyText('link${i}')">复制链接</button></div>
       <div class="link" id="link${i}">${escapeHtml(link)}</div>
@@ -93,40 +135,37 @@ function renderSubPage(o) {
   body {
     font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     color: #4a4458; padding: 28px 16px; min-height: 100vh;
-    background-color: #ece8f7;
-    background-image:
-      linear-gradient(45deg, #e1daf5 25%, transparent 25%, transparent 75%, #e1daf5 75%),
-      linear-gradient(45deg, #e1daf5 25%, transparent 25%, transparent 75%, #e1daf5 75%);
-    background-size: 48px 48px;
-    background-position: 0 0, 24px 24px;
+    background: #f5f1ff;
   }
-  .wrap { max-width: 860px; margin: 0 auto; }
+  ${LG_CSS}
+  #root { max-width: 860px; margin: 0 auto; }
   .header { text-align: center; margin-bottom: 22px; }
-  .header h1 { font-size: 26px; color: #5b4b8a; letter-spacing: 8px; }
+  .header h1 { font-size: 26px; color: #5b4b8a; letter-spacing: 8px; text-shadow: 0 1px 0 rgba(255,255,255,.6); }
   .header .en { font-size: 11px; color: #9a8fc7; letter-spacing: 4px; margin-top: 8px; }
-  .status { display: inline-block; margin-top: 10px; font-size: 12px; color: #2e9e5b; background: #e6f9ee; border-radius: 20px; padding: 4px 14px; }
-  .card { background: #fff; border: 2px dashed #b9aef0; border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; box-shadow: 0 2px 10px rgba(120,100,200,.08); }
+  .status { display: inline-block; margin-top: 10px; font-size: 12px; color: #2e9e5b; background: rgba(230,249,238,.85); border-radius: 20px; padding: 4px 14px; }
+  .card { padding: 18px 20px; margin-bottom: 18px; }
   .card-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 15px; font-weight: 700; color: #5b4b8a; }
-  .badge { background: #efeaff; color: #6a5acd; border-radius: 8px; padding: 3px 12px; font-size: 13px; }
-  .link { font-size: 12px; color: #8a83a3; word-break: break-all; background: #f7f5ff; border-radius: 8px; padding: 10px 12px; font-family: monospace; max-height: 84px; overflow: hidden; }
+  .badge { background: rgba(239,234,255,.8); color: #6a5acd; border-radius: 8px; padding: 3px 12px; font-size: 13px; }
+  .link { font-size: 12px; color: #6f6890; word-break: break-all; background: rgba(255,255,255,.5); border-radius: 10px; padding: 10px 12px; font-family: monospace; max-height: 84px; overflow: hidden; }
   .node-line { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; }
   .node-line b { color: #5b4b8a; }
-  button { background: #7c6cf0; color: #fff; border: none; border-radius: 10px; padding: 8px 18px; font-size: 13px; cursor: pointer; }
+  button { background: #7c6cf0; color: #fff; border: none; border-radius: 10px; padding: 8px 18px; font-size: 13px; cursor: pointer; box-shadow: 0 4px 12px rgba(124,108,240,.35); }
   button:hover { background: #6a5ad0; }
   button:active { transform: scale(.97); }
-  .tip { text-align: center; font-size: 12px; color: #9a8fc7; line-height: 2; margin-top: 6px; }
+  .tip { text-align: center; font-size: 12px; color: #8f86b8; line-height: 2; margin-top: 6px; text-shadow: 0 1px 0 rgba(255,255,255,.5); }
   .ok { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #7c6cf0; color: #fff; border-radius: 20px; padding: 8px 26px; font-size: 14px; display: none; z-index: 99; box-shadow: 0 4px 14px rgba(124,108,240,.4); }
 </style>
 </head>
 <body>
 <div class="ok" id="ok">已复制</div>
-<div class="wrap">
+<div id="root">
+  ${LG_BG_HTML}
   <div class="header">
     <h1>订阅中心</h1>
     <div class="en">SUBSCRIPTION CENTER</div>
     <div class="status">● 运行中</div>
   </div>
-  <div class="card">
+  <div class="glass card">
     <div class="card-title">节点信息</div>
     <div class="node-line"><span>节点名称</span><b>${escapeHtml(o.namePart)}</b></div>
     <div class="node-line"><span>协议</span><b>VLESS / Trojan / Shadowsocks</b></div>
@@ -134,7 +173,7 @@ function renderSubPage(o) {
   ${card('VLESS', o.vlsURL, 0)}
   ${card('TROJAN', o.troURL, 1)}
   ${card('SHADOWSOCKS', o.ssURL, 2)}
-  <div class="card">
+  <div class="glass card">
     <div class="card-title"><span>订阅内容</span><button onclick="copyText('b64')">复制订阅</button></div>
     <div class="link" id="b64">${escapeHtml(o.base64Content)}</div>
   </div>
@@ -155,6 +194,7 @@ function copyText(id) {
   } else { fallback(); }
 }
 </script>
+${LG_SCRIPT}
 </body>
 </html>`;
 }
@@ -194,35 +234,32 @@ function renderPwdPage(isError) {
   body {
     font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     color: #4a4458; padding: 28px 16px; min-height: 100vh;
-    background-color: #ece8f7;
-    background-image:
-      linear-gradient(45deg, #e1daf5 25%, transparent 25%, transparent 75%, #e1daf5 75%),
-      linear-gradient(45deg, #e1daf5 25%, transparent 25%, transparent 75%, #e1daf5 75%);
-    background-size: 48px 48px;
-    background-position: 0 0, 24px 24px;
+    background: #f5f1ff;
   }
-  .wrap { max-width: 520px; margin: 0 auto; padding-top: 8vh; }
+  ${LG_CSS}
+  #root { max-width: 520px; margin: 0 auto; padding-top: 8vh; }
   .header { text-align: center; margin-bottom: 22px; }
-  .header h1 { font-size: 26px; color: #5b4b8a; letter-spacing: 8px; }
+  .header h1 { font-size: 26px; color: #5b4b8a; letter-spacing: 8px; text-shadow: 0 1px 0 rgba(255,255,255,.6); }
   .header .en { font-size: 11px; color: #9a8fc7; letter-spacing: 4px; margin-top: 8px; }
-  .card { background: #fff; border: 2px dashed #b9aef0; border-radius: 14px; padding: 30px 28px; box-shadow: 0 2px 10px rgba(120,100,200,.08); text-align: center; }
+  .card { padding: 30px 28px; text-align: center; }
   .card-title { font-size: 16px; font-weight: 700; color: #5b4b8a; margin-bottom: 18px; }
-  .pwd-input { width: 100%; font-size: 15px; color: #4a4458; background: #f7f5ff; border: 2px solid #d9d2f5; border-radius: 10px; padding: 11px 14px; outline: none; margin-bottom: 16px; }
+  .pwd-input { width: 100%; font-size: 15px; color: #4a4458; background: rgba(255,255,255,.6); border: 2px solid rgba(217,210,245,.8); border-radius: 10px; padding: 11px 14px; outline: none; margin-bottom: 16px; }
   .pwd-input:focus { border-color: #7c6cf0; }
-  button { background: #7c6cf0; color: #fff; border: none; border-radius: 10px; padding: 10px 42px; font-size: 14px; cursor: pointer; letter-spacing: 6px; }
+  button { background: #7c6cf0; color: #fff; border: none; border-radius: 10px; padding: 10px 42px; font-size: 14px; cursor: pointer; letter-spacing: 6px; box-shadow: 0 4px 12px rgba(124,108,240,.35); }
   button:hover { background: #6a5ad0; }
   button:active { transform: scale(.97); }
   .err { margin-top: 14px; font-size: 13px; color: #e05252; }
-  .tip { text-align: center; font-size: 12px; color: #9a8fc7; line-height: 2; margin-top: 14px; }
+  .tip { text-align: center; font-size: 12px; color: #8f86b8; line-height: 2; margin-top: 14px; text-shadow: 0 1px 0 rgba(255,255,255,.5); }
 </style>
 </head>
 <body>
-<div class="wrap">
+<div id="root">
+  ${LG_BG_HTML}
   <div class="header">
     <h1>订阅中心</h1>
     <div class="en">SUBSCRIPTION CENTER</div>
   </div>
-  <div class="card">
+  <div class="glass card">
     <div class="card-title">&#128274; 请输入访问密码</div>
     <form method="POST" action="/${SUB_PATH}">
       <input class="pwd-input" type="password" name="password" placeholder="请输入密码" autocomplete="off" required autofocus>
@@ -232,6 +269,7 @@ function renderPwdPage(isError) {
   </div>
   <div class="tip">此订阅为私人分享<br>请输入密码后查看节点信息</div>
 </div>
+${LG_SCRIPT}
 </body>
 </html>`;
 }
