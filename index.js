@@ -18,6 +18,7 @@ const DOMAIN = process.env.DOMAIN || 'your-domain.com';    // 填写项目域名
 const AUTO_ACCESS = process.env.AUTO_ACCESS || false;      // 是否开启自动访问保活,false为关闭,true为开启,需同时填写DOMAIN变量
 const WSPATH = process.env.WSPATH || UUID.slice(0, 8);     // 节点路径，默认获取uuid前8位
 const SUB_PATH = process.env.SUB_PATH || 'sub';            // 获取节点的订阅路径
+const SUB_PASSWORD = process.env.SUB_PASSWORD || '';      // 订阅页访问密码,为空则不开启密码保护
 const NAME = process.env.NAME || '';                       // 节点名称
 const PORT = process.env.PORT || 3000;                     // http和ws服务端口
 
@@ -158,6 +159,83 @@ function copyText(id) {
 </html>`;
 }
 
+// 密码保护相关
+function sha256(s) { return crypto.createHash('sha256').update(s).digest('hex'); }
+
+function parseCookies(req) {
+  const out = {};
+  const h = req.headers.cookie;
+  if (h) h.split(';').forEach(p => {
+    const i = p.indexOf('=');
+    if (i > 0) out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim());
+  });
+  return out;
+}
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', c => { data += c; if (data.length > 1e5) req.destroy(); });
+    req.on('end', () => resolve(data));
+    req.on('error', () => resolve(''));
+  });
+}
+
+// 密码输入页(浅紫主题)
+function renderPwdPage(isError) {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>订阅中心 - 请输入密码</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: #4a4458; padding: 28px 16px; min-height: 100vh;
+    background-color: #ece8f7;
+    background-image:
+      linear-gradient(45deg, #e1daf5 25%, transparent 25%, transparent 75%, #e1daf5 75%),
+      linear-gradient(45deg, #e1daf5 25%, transparent 25%, transparent 75%, #e1daf5 75%);
+    background-size: 48px 48px;
+    background-position: 0 0, 24px 24px;
+  }
+  .wrap { max-width: 520px; margin: 0 auto; padding-top: 8vh; }
+  .header { text-align: center; margin-bottom: 22px; }
+  .header h1 { font-size: 26px; color: #5b4b8a; letter-spacing: 8px; }
+  .header .en { font-size: 11px; color: #9a8fc7; letter-spacing: 4px; margin-top: 8px; }
+  .card { background: #fff; border: 2px dashed #b9aef0; border-radius: 14px; padding: 30px 28px; box-shadow: 0 2px 10px rgba(120,100,200,.08); text-align: center; }
+  .card-title { font-size: 16px; font-weight: 700; color: #5b4b8a; margin-bottom: 18px; }
+  .pwd-input { width: 100%; font-size: 15px; color: #4a4458; background: #f7f5ff; border: 2px solid #d9d2f5; border-radius: 10px; padding: 11px 14px; outline: none; margin-bottom: 16px; }
+  .pwd-input:focus { border-color: #7c6cf0; }
+  button { background: #7c6cf0; color: #fff; border: none; border-radius: 10px; padding: 10px 42px; font-size: 14px; cursor: pointer; letter-spacing: 6px; }
+  button:hover { background: #6a5ad0; }
+  button:active { transform: scale(.97); }
+  .err { margin-top: 14px; font-size: 13px; color: #e05252; }
+  .tip { text-align: center; font-size: 12px; color: #9a8fc7; line-height: 2; margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <h1>订阅中心</h1>
+    <div class="en">SUBSCRIPTION CENTER</div>
+  </div>
+  <div class="card">
+    <div class="card-title">&#128274; 请输入访问密码</div>
+    <form method="POST" action="/${SUB_PATH}">
+      <input class="pwd-input" type="password" name="password" placeholder="请输入密码" autocomplete="off" required autofocus>
+      <button type="submit">进 入</button>
+    </form>
+    ${isError ? '<div class="err">密码错误,请重试</div>' : ''}
+  </div>
+  <div class="tip">此订阅为私人分享<br>请输入密码后查看节点信息</div>
+</div>
+</body>
+</html>`;
+}
+
 // http route
 const httpServer = http.createServer(async (req, res) => {
   if (req.url === '/') {
@@ -172,7 +250,7 @@ const httpServer = http.createServer(async (req, res) => {
       res.end(content);
     });
     return;
-  } else if (req.url === `/${SUB_PATH}`) {
+  } else if ((req.url || '').split('?')[0] === `/${SUB_PATH}`) {
     await getisp();await getip();
     const namePart = NAME ? `${NAME}-${ISP}` : ISP;
     const tlsParam = Tls === 'tls' ? 'tls' : 'none';
@@ -184,11 +262,52 @@ const httpServer = http.createServer(async (req, res) => {
     const subscription = vlsURL + '\n' + troURL + '\n' + ssURL;
     const base64Content = Buffer.from(subscription).toString('base64');
 
-    // 浏览器访问 -> 返回美化订阅页;订阅客户端 -> 返回原始 base64(保证客户端自动更新不受影响)
+    const pageData = { namePart, vlsURL, troURL, ssURL, base64Content };
     const ua = (req.headers['user-agent'] || '').toLowerCase();
+
+    // 设置了 SUB_PASSWORD 则启用密码保护
+    if (SUB_PASSWORD) {
+      const urlObj = new URL(req.url || '/', 'http://localhost');
+      if (ua.includes('mozilla')) {
+        // 浏览器: Cookie 免登,否则显示密码页
+        if (req.method === 'POST') {
+          const body = await readBody(req);
+          const pwd = new URLSearchParams(body).get('password') || '';
+          if (pwd === SUB_PASSWORD) {
+            res.writeHead(200, {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Set-Cookie': `sub_auth=${sha256(SUB_PASSWORD)}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax`
+            });
+            res.end(renderSubPage(pageData));
+          } else {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(renderPwdPage(true));
+          }
+          return;
+        }
+        const cookies = parseCookies(req);
+        if (cookies.sub_auth === sha256(SUB_PASSWORD)) {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(renderSubPage(pageData));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(renderPwdPage(false));
+        return;
+      } else {
+        // 订阅客户端: 需要 ?pwd= 参数,保证客户端自动更新可用
+        if (urlObj.searchParams.get('pwd') !== SUB_PASSWORD) {
+          res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('Unauthorized: subscription password required\n');
+          return;
+        }
+      }
+    }
+
+    // 浏览器访问 -> 返回美化订阅页;订阅客户端 -> 返回原始 base64(保证客户端自动更新不受影响)
     if (ua.includes('mozilla')) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(renderSubPage({ namePart, vlsURL, troURL, ssURL, base64Content }));
+      res.end(renderSubPage(pageData));
     } else {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end(base64Content + '\n');
