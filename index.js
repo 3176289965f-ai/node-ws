@@ -68,6 +68,96 @@ async function getip() {
   }
 }
 
+
+// 订阅美化页(清新浅紫风格)
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function renderSubPage(o) {
+  const card = (proto, link, i) => `
+    <div class="card">
+      <div class="card-title"><span class="badge">${proto}</span>
+        <button onclick="copyText('link${i}')">复制链接</button></div>
+      <div class="link" id="link${i}">${escapeHtml(link)}</div>
+    </div>`;
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>订阅中心 - ${escapeHtml(o.namePart)}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: #4a4458; padding: 28px 16px; min-height: 100vh;
+    background-color: #ece8f7;
+    background-image:
+      linear-gradient(45deg, #e1daf5 25%, transparent 25%, transparent 75%, #e1daf5 75%),
+      linear-gradient(45deg, #e1daf5 25%, transparent 25%, transparent 75%, #e1daf5 75%);
+    background-size: 48px 48px;
+    background-position: 0 0, 24px 24px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  .header { text-align: center; margin-bottom: 22px; }
+  .header h1 { font-size: 26px; color: #5b4b8a; letter-spacing: 8px; }
+  .header .en { font-size: 11px; color: #9a8fc7; letter-spacing: 4px; margin-top: 8px; }
+  .status { display: inline-block; margin-top: 10px; font-size: 12px; color: #2e9e5b; background: #e6f9ee; border-radius: 20px; padding: 4px 14px; }
+  .card { background: #fff; border: 2px dashed #b9aef0; border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; box-shadow: 0 2px 10px rgba(120,100,200,.08); }
+  .card-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 15px; font-weight: 700; color: #5b4b8a; }
+  .badge { background: #efeaff; color: #6a5acd; border-radius: 8px; padding: 3px 12px; font-size: 13px; }
+  .link { font-size: 12px; color: #8a83a3; word-break: break-all; background: #f7f5ff; border-radius: 8px; padding: 10px 12px; font-family: monospace; max-height: 84px; overflow: hidden; }
+  .node-line { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; }
+  .node-line b { color: #5b4b8a; }
+  button { background: #7c6cf0; color: #fff; border: none; border-radius: 10px; padding: 8px 18px; font-size: 13px; cursor: pointer; }
+  button:hover { background: #6a5ad0; }
+  button:active { transform: scale(.97); }
+  .tip { text-align: center; font-size: 12px; color: #9a8fc7; line-height: 2; margin-top: 6px; }
+  .ok { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #7c6cf0; color: #fff; border-radius: 20px; padding: 8px 26px; font-size: 14px; display: none; z-index: 99; box-shadow: 0 4px 14px rgba(124,108,240,.4); }
+</style>
+</head>
+<body>
+<div class="ok" id="ok">已复制</div>
+<div class="wrap">
+  <div class="header">
+    <h1>订阅中心</h1>
+    <div class="en">SUBSCRIPTION CENTER</div>
+    <div class="status">● 运行中</div>
+  </div>
+  <div class="card">
+    <div class="card-title">节点信息</div>
+    <div class="node-line"><span>节点名称</span><b>${escapeHtml(o.namePart)}</b></div>
+    <div class="node-line"><span>协议</span><b>VLESS / Trojan / Shadowsocks</b></div>
+  </div>
+  ${card('VLESS', o.vlsURL, 0)}
+  ${card('TROJAN', o.troURL, 1)}
+  ${card('SHADOWSOCKS', o.ssURL, 2)}
+  <div class="card">
+    <div class="card-title"><span>订阅内容</span><button onclick="copyText('b64')">复制订阅</button></div>
+    <div class="link" id="b64">${escapeHtml(o.base64Content)}</div>
+  </div>
+  <div class="tip">v2rayNG / Nekoray / Streisand 等客户端<br>请直接使用订阅地址自动更新，无需手动复制</div>
+</div>
+<script>
+function copyText(id) {
+  var t = document.getElementById(id).innerText;
+  function done() { var o = document.getElementById('ok'); o.style.display = 'block'; setTimeout(function(){ o.style.display = 'none'; }, 1200); }
+  function fallback() {
+    var ta = document.createElement('textarea');
+    ta.value = t; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(done).catch(fallback);
+  } else { fallback(); }
+}
+</script>
+</body>
+</html>`;
+}
+
 // http route
 const httpServer = http.createServer(async (req, res) => {
   if (req.url === '/') {
@@ -94,8 +184,15 @@ const httpServer = http.createServer(async (req, res) => {
     const subscription = vlsURL + '\n' + troURL + '\n' + ssURL;
     const base64Content = Buffer.from(subscription).toString('base64');
 
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end(base64Content + '\n');
+    // 浏览器访问 -> 返回美化订阅页;订阅客户端 -> 返回原始 base64(保证客户端自动更新不受影响)
+    const ua = (req.headers['user-agent'] || '').toLowerCase();
+    if (ua.includes('mozilla')) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(renderSubPage({ namePart, vlsURL, troURL, ssURL, base64Content }));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(base64Content + '\n');
+    }
   } else {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found\n');

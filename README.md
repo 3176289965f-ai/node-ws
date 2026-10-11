@@ -40,8 +40,9 @@ PaaS / 容器平台部署，设置以下环境变量：
 | NEZHA_KEY    | 否 | | 哪吒 v1 的 `NZ_CLIENT_SECRET`，或 v0 的 agent 密钥 |
 | AUTO_ACCESS  | 否 | `false` | 是否开启自动访问保活，需同时填写 DOMAIN |
 
-部署后访问 `https://你的域名/${SUB_PATH}` 获取节点订阅链接（base64），
-导入 v2rayNG / Nekoray / Streisand 等客户端即可使用。
+部署后访问 `https://你的域名/${SUB_PATH}`：
+- 用**浏览器**打开 → 显示浅紫色订阅中心页面，可一键复制各协议链接；
+- **客户端**（v2rayNG / Nekoray / Streisand 等）用该地址**订阅更新** → 自动获取原始 base64 订阅，不受影响。
 
 > 提示：`README.md` 为说明文件，部署时不需要上传。
 
