@@ -33,7 +33,7 @@ PaaS / 容器平台部署，设置以下环境变量：
 | PORT         | 否 | `3000` | 监听端口 |
 | DOMAIN       | 是 | | 项目域名或已反代的域名，不带 `https://` 前缀 |
 | SUB_PATH     | 否 | `sub` | 订阅路径，即 `https://你的域名/sub` |
-| SUB_PASSWORD | 否 | 空 | 订阅页访问密码；设置后浏览器需输密码查看，客户端订阅地址需加 `?pwd=密码` 参数 |
+| SUB_PASSWORD | 否 | 空 | 订阅页访问密码；设置后浏览器打开页面需输密码，客户端订阅不受影响 |
 | WSPATH       | 否 | UUID 前 8 位 | WebSocket 节点路径 |
 | NAME         | 否 | | 节点名称前缀，例如 `MyNode` |
 | NEZHA_SERVER | 否 | | 哪吒 v1 填写 `nz.abc.com:8008`，v0 填写 `nz.abc.com` |

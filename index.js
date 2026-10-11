@@ -265,10 +265,8 @@ const httpServer = http.createServer(async (req, res) => {
     const pageData = { namePart, vlsURL, troURL, ssURL, base64Content };
     const ua = (req.headers['user-agent'] || '').toLowerCase();
 
-    // 设置了 SUB_PASSWORD 则启用密码保护
-    if (SUB_PASSWORD) {
-      const urlObj = new URL(req.url || '/', 'http://localhost');
-      if (ua.includes('mozilla')) {
+    // 设置了 SUB_PASSWORD: 仅浏览器页面需要密码,订阅客户端直接返回(复制即用)
+    if (SUB_PASSWORD && ua.includes('mozilla')) {
         // 浏览器: Cookie 免登,否则显示密码页
         if (req.method === 'POST') {
           const body = await readBody(req);
@@ -294,14 +292,6 @@ const httpServer = http.createServer(async (req, res) => {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(renderPwdPage(false));
         return;
-      } else {
-        // 订阅客户端: 需要 ?pwd= 参数,保证客户端自动更新可用
-        if (urlObj.searchParams.get('pwd') !== SUB_PASSWORD) {
-          res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' });
-          res.end('Unauthorized: subscription password required\n');
-          return;
-        }
-      }
     }
 
     // 浏览器访问 -> 返回美化订阅页;订阅客户端 -> 返回原始 base64(保证客户端自动更新不受影响)
