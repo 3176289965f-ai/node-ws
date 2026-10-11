@@ -236,6 +236,55 @@ function renderPwdPage(isError) {
 </html>`;
 }
 
+// Clash 类客户端订阅: 返回可直接导入的 YAML 配置
+function buildClashYaml() {
+  const domain = CurrentDomain;
+  const port = CurrentPort;
+  const wsPath = '/' + WSPATH;
+  return `# XSM Clash 订阅配置 (node-ws 自动生成)
+port: 7890
+socks-port: 7891
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: false
+proxies:
+  - name: "XSM-VLESS"
+    type: vless
+    server: ${domain}
+    port: ${port}
+    uuid: ${UUID}
+    tls: true
+    servername: ${domain}
+    fingerprint: chrome
+    network: ws
+    ws-opts:
+      path: "${wsPath}"
+      headers:
+        Host: ${domain}
+  - name: "XSM-Trojan"
+    type: trojan
+    server: ${domain}
+    port: ${port}
+    password: ${UUID}
+    sni: ${domain}
+    fingerprint: chrome
+    network: ws
+    ws-opts:
+      path: "${wsPath}"
+      headers:
+        Host: ${domain}
+proxy-groups:
+  - name: "PROXY"
+    type: select
+    proxies:
+      - "XSM-VLESS"
+      - "XSM-Trojan"
+rules:
+  - "MATCH,PROXY"
+`;
+}
+
 // http route
 const httpServer = http.createServer(async (req, res) => {
   if (req.url === '/') {
@@ -294,10 +343,13 @@ const httpServer = http.createServer(async (req, res) => {
         return;
     }
 
-    // 浏览器访问 -> 返回美化订阅页;订阅客户端 -> 返回原始 base64(保证客户端自动更新不受影响)
+    // 浏览器访问 -> 返回美化订阅页;Clash 类客户端 -> 返回 YAML 配置;其他订阅客户端 -> 返回原始 base64
     if (ua.includes('mozilla')) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(renderSubPage(pageData));
+    } else if (/clash|mihomo|stash/i.test(ua) || new URL(req.url || '/', 'http://localhost').searchParams.get('format') === 'yaml') {
+      res.writeHead(200, { 'Content-Type': 'text/yaml; charset=utf-8' });
+      res.end(buildClashYaml());
     } else {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end(base64Content + '\n');

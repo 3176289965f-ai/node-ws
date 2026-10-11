@@ -33,7 +33,7 @@ PaaS / 容器平台部署，设置以下环境变量：
 | PORT         | 否 | `3000` | 监听端口 |
 | DOMAIN       | 是 | | 项目域名或已反代的域名，不带 `https://` 前缀 |
 | SUB_PATH     | 否 | `sub` | 订阅路径，即 `https://你的域名/sub` |
-| SUB_PASSWORD | 否 | 空 | 订阅页访问密码；设置后浏览器打开页面需输密码，客户端订阅不受影响 |
+| SUB_PASSWORD | 否 | 空 | 订阅页访问密码；设置后浏览器需输密码查看，客户端订阅不受影响 |
 | WSPATH       | 否 | UUID 前 8 位 | WebSocket 节点路径 |
 | NAME         | 否 | | 节点名称前缀，例如 `MyNode` |
 | NEZHA_SERVER | 否 | | 哪吒 v1 填写 `nz.abc.com:8008`，v0 填写 `nz.abc.com` |
@@ -44,6 +44,7 @@ PaaS / 容器平台部署，设置以下环境变量：
 部署后访问 `https://你的域名/${SUB_PATH}`：
 - 用**浏览器**打开 → 显示浅紫色订阅中心页面，可一键复制各协议链接；
 - **客户端**（v2rayNG / Nekoray / Streisand 等）用该地址**订阅更新** → 自动获取原始 base64 订阅，不受影响。
+- **Clash 类客户端**（UA 含 clash / mihomo / stash）用该地址**从 URL 导入** → 自动获取可直接用的 YAML 配置。
 
 > 提示：`README.md` 为说明文件，部署时不需要上传。
 
