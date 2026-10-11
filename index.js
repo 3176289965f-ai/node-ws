@@ -256,7 +256,6 @@ proxies:
     uuid: ${UUID}
     tls: true
     servername: ${domain}
-    fingerprint: chrome
     network: ws
     ws-opts:
       path: "${wsPath}"
@@ -268,7 +267,6 @@ proxies:
     port: ${port}
     password: ${UUID}
     sni: ${domain}
-    fingerprint: chrome
     network: ws
     ws-opts:
       path: "${wsPath}"
@@ -580,6 +578,7 @@ function handleSsConnection(ws, msg) {
 const wss = new WebSocket.Server({ server: httpServer });
 wss.on('connection', (ws, req) => {
   const url = req.url || '';
+  console.log('WS conn:', url);
 
   const expectedPath = `/${WSPATH}`;
   if (!url.startsWith(expectedPath)) {
@@ -588,6 +587,7 @@ wss.on('connection', (ws, req) => {
   }
 
   ws.once('message', msg => {
+    console.log('WS msg: len=' + msg.length + ' firstByte=' + msg[0]);
     // VLE-SS (version byte 0 + 16 bytes UUID)
     if (msg.length > 17 && msg[0] === 0) {
       const id = msg.slice(1, 17);
