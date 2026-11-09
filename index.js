@@ -23,6 +23,35 @@ const NAME = process.env.NAME || '';                       // 节点名称
 const PORT = process.env.PORT || 3000;                     // http和ws服务端口
 
 let uuid = UUID.replace(/-/g, ""), CurrentDomain = DOMAIN, Tls = 'tls', CurrentPort = 443, ISP = '';
+const { Transform } = require('stream');
+
+// 体验订阅: 独立 UUID + 流量上限(默认 1GB),用完即断;计数落盘,重建容器不重置
+const TRIAL_UUID = process.env.TRIAL_UUID || '';
+const TRIAL_LIMIT_GB = parseFloat(process.env.TRIAL_LIMIT_GB || '1');
+const TRIAL_LIMIT_BYTES = Math.round(TRIAL_LIMIT_GB * 1024 * 1024 * 1024);
+const TRIAL_SUB_PATH = process.env.TRIAL_SUB_PATH || '';
+const TRIAL_DATA_FILE = process.env.TRIAL_DATA_FILE || '/data/trial-usage.json';
+const trialUuid = TRIAL_UUID ? TRIAL_UUID.replace(/-/g, '') : '';
+let trialUsed = 0, trialDirty = false;
+function loadTrialUsage() {
+  if (!TRIAL_UUID) return;
+  try {
+    const d = JSON.parse(fs.readFileSync(TRIAL_DATA_FILE, 'utf8'));
+    if (typeof d.used === 'number' && d.used > 0) trialUsed = d.used;
+  } catch (e) { /* 无记录,从 0 开始 */ }
+}
+function saveTrialUsage() {
+  if (!TRIAL_UUID || !trialDirty) return;
+  try {
+    fs.mkdirSync(path.dirname(TRIAL_DATA_FILE), { recursive: true });
+    fs.writeFileSync(TRIAL_DATA_FILE, JSON.stringify({ used: trialUsed, limit: TRIAL_LIMIT_BYTES, updated: new Date().toISOString() }));
+    trialDirty = false;
+  } catch (e) { console.error('save trial usage failed:', e.message); }
+}
+loadTrialUsage();
+setInterval(saveTrialUsage, 15000);
+process.on('SIGTERM', () => { saveTrialUsage(); process.exit(0); });
+process.on('SIGINT', () => { saveTrialUsage(); process.exit(0); });
 const DNS_SERVERS = ['8.8.4.4', '1.1.1.1'];
 const BLOCKED_DOMAINS = [
   'speedtest.net', 'fast.com', 'speedtest.cn', 'speed.cloudflare.com', 'speedof.me',
@@ -274,6 +303,102 @@ ${LG_SCRIPT}
 </html>`;
 }
 
+// 体验订阅页: 显示流量用量/余量 + 两个体验节点
+function fmtBytes(n) {
+  if (n >= 1073741824) return (n / 1073741824).toFixed(2) + ' GB';
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+  return n + ' B';
+}
+function renderTrialPage(o) {
+  const used = trialUsed, limit = TRIAL_LIMIT_BYTES;
+  const remain = Math.max(0, limit - used);
+  const pct = Math.min(100, Math.round(used / limit * 100));
+  const ok = used < limit;
+  const card = (proto, link, i) => `
+    <div class="glass card">
+      <div class="card-title"><span class="badge">${proto}</span>
+        <button onclick="copyText('link${i}')">复制链接</button></div>
+      <div class="link" id="link${i}">${escapeHtml(link)}</div>
+    </div>`;
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>体验订阅 - ${escapeHtml(o.namePart)}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: #4a4458; padding: 28px 16px; min-height: 100vh;
+    background: #f5f1ff;
+  }
+  ${LG_CSS}
+  #root { max-width: 860px; margin: 0 auto; }
+  .header { text-align: center; margin-bottom: 22px; }
+  .header h1 { font-size: 26px; color: #5b4b8a; letter-spacing: 8px; text-shadow: 0 1px 0 rgba(255,255,255,.6); }
+  .header .en { font-size: 11px; color: #9a8fc7; letter-spacing: 4px; margin-top: 8px; }
+  .status { display: inline-block; margin-top: 10px; font-size: 12px; border-radius: 20px; padding: 4px 14px; ${ok ? 'color: #2e9e5b; background: rgba(230,249,238,.85);' : 'color: #e05252; background: rgba(253,232,232,.85);'} }
+  .card { padding: 18px 20px; margin-bottom: 18px; }
+  .card-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 15px; font-weight: 700; color: #5b4b8a; }
+  .badge { background: rgba(239,234,255,.8); color: #6a5acd; border-radius: 8px; padding: 3px 12px; font-size: 13px; }
+  .link { font-size: 12px; color: #6f6890; word-break: break-all; background: rgba(255,255,255,.5); border-radius: 10px; padding: 10px 12px; font-family: monospace; max-height: 84px; overflow: hidden; }
+  .node-line { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; }
+  .node-line b { color: #5b4b8a; }
+  .bar { height: 10px; background: rgba(255,255,255,.6); border-radius: 6px; overflow: hidden; margin-top: 10px; }
+  .bar i { display: block; height: 100%; width: ${pct}%; background: ${ok ? 'linear-gradient(90deg,#8b7cf0,#c084fc)' : '#e05252'}; border-radius: 6px; }
+  button { background: #7c6cf0; color: #fff; border: none; border-radius: 10px; padding: 8px 18px; font-size: 13px; cursor: pointer; box-shadow: 0 4px 12px rgba(124,108,240,.35); }
+  button:hover { background: #6a5ad0; }
+  button:active { transform: scale(.97); }
+  .tip { text-align: center; font-size: 12px; color: #8f86b8; line-height: 2; margin-top: 6px; text-shadow: 0 1px 0 rgba(255,255,255,.5); }
+  .ok { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #7c6cf0; color: #fff; border-radius: 20px; padding: 8px 26px; font-size: 14px; display: none; z-index: 99; box-shadow: 0 4px 14px rgba(124,108,240,.4); }
+</style>
+</head>
+<body>
+<div class="ok" id="ok">已复制</div>
+<div id="root">
+  ${LG_BG_HTML}
+  <div class="header">
+    <h1>体验订阅</h1>
+    <div class="en">TRIAL SUBSCRIPTION</div>
+    <div class="status">${ok ? '● 可用' : '● 流量已用完'}</div>
+  </div>
+  <div class="glass card">
+    <div class="card-title">流量用量</div>
+    <div class="node-line"><span>已用</span><b>${fmtBytes(used)}</b></div>
+    <div class="node-line"><span>剩余</span><b>${fmtBytes(remain)}</b></div>
+    <div class="node-line"><span>总量</span><b>${fmtBytes(limit)}</b></div>
+    <div class="bar"><i></i></div>
+  </div>
+  ${card('VLESS', o.vlsURL, 0)}
+  ${card('TROJAN', o.troURL, 1)}
+  <div class="glass card">
+    <div class="card-title"><span>订阅内容</span><button onclick="copyText('b64')">复制订阅</button></div>
+    <div class="link" id="b64">${escapeHtml(o.base64Content)}</div>
+  </div>
+  <div class="tip">小火箭 / Shadowrocket 等客户端<br>请直接使用体验订阅地址导入,流量用完自动断开</div>
+</div>
+<script>
+function copyText(id) {
+  var t = document.getElementById(id).innerText;
+  function done() { var o = document.getElementById('ok'); o.style.display = 'block'; setTimeout(function(){ o.style.display = 'none'; }, 1200); }
+  function fallback() {
+    var ta = document.createElement('textarea');
+    ta.value = t; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(done).catch(fallback);
+  } else { fallback(); }
+}
+</script>
+${LG_SCRIPT}
+</body>
+</html>`;
+}
+
 // Clash 类客户端订阅: 返回可直接导入的 YAML 配置
 function buildClashYaml() {
   const domain = CurrentDomain;
@@ -390,6 +515,21 @@ const httpServer = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end(base64Content + '\n');
     }
+  } else if (TRIAL_SUB_PATH && (req.url || '').split('?')[0] === `/${TRIAL_SUB_PATH}`) {
+    // 体验订阅: 独立 UUID + 流量上限,仅 VLESS/Trojan(带身份验证);浏览器看余量,客户端拿 base64
+    const trialName = (NAME ? `${NAME}-` : '') + 'Trial';
+    const tlsParam = Tls === 'tls' ? 'tls' : 'none';
+    const vlsURL = `vless://${TRIAL_UUID}@${CurrentDomain}:${CurrentPort}?encryption=none&security=${tlsParam}&sni=${CurrentDomain}&fp=chrome&type=ws&host=${CurrentDomain}&path=%2F${WSPATH}#${trialName}`;
+    const troURL = `trojan://${TRIAL_UUID}@${CurrentDomain}:${CurrentPort}?security=${tlsParam}&sni=${CurrentDomain}&fp=chrome&type=ws&host=${CurrentDomain}&path=%2F${WSPATH}#${trialName}`;
+    const base64Content = Buffer.from(vlsURL + '\n' + troURL).toString('base64');
+    const ua = (req.headers['user-agent'] || '').toLowerCase();
+    if (ua.includes('mozilla')) {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(renderTrialPage({ namePart: trialName, vlsURL, troURL, base64Content }));
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end(base64Content + '\n');
+    }
   } else {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found\n');
@@ -438,11 +578,39 @@ function resolveHost(host) {
   });
 }
 
+// 流量计数 + 中继: 体验账号双向计流量,超量即断开连接
+function trialCounter(ws, socket) {
+  const t = new Transform({
+    transform(chunk, enc, cb) {
+      trialUsed += chunk.length;
+      trialDirty = true;
+      if (trialUsed >= TRIAL_LIMIT_BYTES) {
+        try { ws.close(); } catch (e) {}
+        try { socket.destroy(); } catch (e) {}
+      }
+      cb(null, chunk);
+    }
+  });
+  t.on('error', () => {});
+  return t;
+}
+function relay(duplex, socket, ws, isTrial) {
+  duplex.on('error', () => {});
+  socket.on('error', () => {});
+  if (!isTrial) {
+    duplex.pipe(socket).pipe(duplex);
+    return;
+  }
+  duplex.pipe(trialCounter(ws, socket)).pipe(socket).pipe(trialCounter(ws, socket)).pipe(duplex);
+}
+
 // VLE-SS处理
-function handleVlsConnection(ws, msg) {
+function handleVlsConnection(ws, msg, isTrial) {
   const [VERSION] = msg;
   const id = msg.slice(1, 17);
-  if (!id.every((v, i) => v == parseInt(uuid.substr(i * 2, 2), 16))) return false;
+  const isMain = id.every((v, i) => v == parseInt(uuid.substr(i * 2, 2), 16));
+  const isTrialId = !!trialUuid && id.every((v, i) => v == parseInt(trialUuid.substr(i * 2, 2), 16));
+  if (!isMain && !isTrialId) return false;
 
   let i = msg.slice(17, 18).readUInt8() + 19;
   const port = msg.slice(i, i += 2).readUInt16BE(0);
@@ -461,13 +629,15 @@ function handleVlsConnection(ws, msg) {
     .then(resolvedIP => {
       net.connect({ host: resolvedIP, port }, function () {
         this.write(msg.slice(i));
-        duplex.on('error', () => { }).pipe(this).on('error', () => { }).pipe(duplex);
+        if (isTrial) { trialUsed += msg.length - i; trialDirty = true; }
+        relay(duplex, this, ws, isTrial);
       }).on('error', () => { });
     })
     .catch(error => {
       net.connect({ host, port }, function () {
         this.write(msg.slice(i));
-        duplex.on('error', () => { }).pipe(this).on('error', () => { }).pipe(duplex);
+        if (isTrial) { trialUsed += msg.length - i; trialDirty = true; }
+        relay(duplex, this, ws, isTrial);
       }).on('error', () => { });
     });
 
@@ -479,7 +649,7 @@ function handleTrojConnection(ws, msg) {
   try {
     if (msg.length < 58) return false;
     const receivedPasswordHash = msg.slice(0, 56).toString();
-    const possiblePasswords = [UUID];
+    const possiblePasswords = TRIAL_UUID ? [UUID, TRIAL_UUID] : [UUID];
 
     let matchedPassword = null;
     for (const pwd of possiblePasswords) {
@@ -491,6 +661,11 @@ function handleTrojConnection(ws, msg) {
     }
 
     if (!matchedPassword) return false;
+    const isTrial = matchedPassword === TRIAL_UUID;
+    if (isTrial && trialUsed >= TRIAL_LIMIT_BYTES) {
+      ws.close();
+      return false;
+    }
     let offset = 56;
     if (msg[offset] === 0x0d && msg[offset + 1] === 0x0a) {
       offset += 2;
@@ -536,16 +711,18 @@ function handleTrojConnection(ws, msg) {
         net.connect({ host: resolvedIP, port }, function () {
           if (offset < msg.length) {
             this.write(msg.slice(offset));
+            if (isTrial) { trialUsed += msg.length - offset; trialDirty = true; }
           }
-          duplex.on('error', () => { }).pipe(this).on('error', () => { }).pipe(duplex);
+          relay(duplex, this, ws, isTrial);
         }).on('error', () => { });
       })
       .catch(error => {
         net.connect({ host, port }, function () {
           if (offset < msg.length) {
             this.write(msg.slice(offset));
+            if (isTrial) { trialUsed += msg.length - offset; trialDirty = true; }
           }
-          duplex.on('error', () => { }).pipe(this).on('error', () => { }).pipe(duplex);
+          relay(duplex, this, ws, isTrial);
         }).on('error', () => { });
       });
 
@@ -630,8 +807,13 @@ wss.on('connection', (ws, req) => {
     if (msg.length > 17 && msg[0] === 0) {
       const id = msg.slice(1, 17);
       const isVless = id.every((v, i) => v == parseInt(uuid.substr(i * 2, 2), 16));
-      if (isVless) {
-        if (!handleVlsConnection(ws, msg)) {
+      const isTrialVless = !!trialUuid && id.every((v, i) => v == parseInt(trialUuid.substr(i * 2, 2), 16));
+      if (isVless || isTrialVless) {
+        if (isTrialVless && trialUsed >= TRIAL_LIMIT_BYTES) {
+          ws.close();
+          return;
+        }
+        if (!handleVlsConnection(ws, msg, isTrialVless)) {
           ws.close();
         }
         return;
